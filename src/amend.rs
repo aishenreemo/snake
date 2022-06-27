@@ -1,7 +1,13 @@
 use crate::core::Command;
-type AmendError = Box<dyn ::std::error::Error>;
+use crate::core::Game;
 
-pub fn update(commands: Vec<Command>) -> Result<(), AmendError> {
+type AmendError = Box<dyn ::std::error::Error>;
+type AmendResult = Result<(), AmendError>;
+
+pub fn update(
+    _game: &mut Game, 
+    commands: Vec<Command>
+) -> AmendResult {
     for cmd in commands.into_iter() {
         match cmd {
             Command::Quit => std::process::exit(0),

@@ -1,6 +1,6 @@
 mod amend;
-mod listener;
 mod display;
+mod listener;
 
 pub mod core;
 
@@ -14,6 +14,8 @@ fn main() -> Result<(), String> {
         .build()
         .expect("Could not initialize video subsystem.");
 
+    let mut game = core::Game::default();
+
     let mut canvas = window
         .into_canvas()
         .build()
@@ -25,18 +27,18 @@ fn main() -> Result<(), String> {
         // process input
         let mut commands = vec![];
         for event in event_pump.poll_iter() {
-            if let Err(error_msg) = listener::handle_event(&mut commands, event) {
+            if let Err(error_msg) = listener::handle_event(&game, &mut commands, event) {
                 eprintln!("Encountered error while processing input:\n{error_msg:?}");
             }
         }
 
         // update
-        if let Err(error_msg) = amend::update(commands) {
+        if let Err(error_msg) = amend::update(&mut game, commands) {
             eprintln!("Encountered error while updating data:\n{error_msg:?}");
         }
 
         // render
-        if let Err(error_msg) = display::render(&mut canvas) {
+        if let Err(error_msg) = display::render(&game, &mut canvas) {
             eprintln!("Encountered error while rendering canvas:\n{error_msg:?}");
         }
 
