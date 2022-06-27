@@ -1,69 +1,8 @@
-mod amend {
-    use super::Command;
-    type AmendError = Box<dyn ::std::error::Error>;
+mod amend;
+mod listener;
+mod display;
 
-    pub fn update(commands: Vec<Command>) -> Result<(), AmendError> {
-        for cmd in commands.into_iter() {
-            match cmd {
-                Command::Quit => std::process::exit(0),
-            }
-        }
-
-        Ok(())
-    }
-}
-
-mod listener {
-    use super::Command;
-
-    use sdl2::event::Event;
-    use sdl2::keyboard::Keycode;
-
-    // use sdl2::keyboard::Keycode;
-    type ListenerError = Box<dyn ::std::error::Error>;
-    type ListenerResult = Result<(), ListenerError>;
-
-    // triggers when you release a key
-    fn listen_key_up(commands: &mut Vec<Command>, keycode: Option<Keycode>) -> ListenerResult {
-        if let Some(Keycode::Escape) = keycode {
-            commands.push(Command::Quit);
-        }
-
-        // match keycode {
-        //     Some(Keycode::Escape) => commands.push(Command::Quit),
-        //     _ => (),
-        // }
-        Ok(())
-    }
-
-    pub fn handle_event(commands: &mut Vec<Command>, event: Event) -> ListenerResult {
-        match event {
-            Event::Quit { .. } => commands.push(Command::Quit),
-            Event::KeyDown { keycode, .. } => listen_key_up(commands, keycode)?,
-            _ => (),
-        }
-
-        Ok(())
-    }
-}
-
-mod display {
-    use sdl2::pixels::Color;
-    use sdl2::render::WindowCanvas;
-
-    type DisplayError = Box<dyn ::std::error::Error>;
-
-    pub fn render(canvas: &mut WindowCanvas) -> Result<(), DisplayError> {
-        canvas.set_draw_color(Color::BLACK);
-        canvas.clear();
-        canvas.present();
-        Ok(())
-    }
-}
-
-pub enum Command {
-    Quit,
-}
+pub mod core;
 
 fn main() -> Result<(), String> {
     let sdl_context = sdl2::init()?;
@@ -87,18 +26,18 @@ fn main() -> Result<(), String> {
         let mut commands = vec![];
         for event in event_pump.poll_iter() {
             if let Err(error_msg) = listener::handle_event(&mut commands, event) {
-                eprintln!("{error_msg:?}");
+                eprintln!("Encountered error while processing input:\n{error_msg:?}");
             }
         }
 
         // update
         if let Err(error_msg) = amend::update(commands) {
-            eprintln!("{error_msg:?}");
+            eprintln!("Encountered error while updating data:\n{error_msg:?}");
         }
 
         // render
         if let Err(error_msg) = display::render(&mut canvas) {
-            eprintln!("{error_msg:?}");
+            eprintln!("Encountered error while rendering canvas:\n{error_msg:?}");
         }
 
         // 30 fps
