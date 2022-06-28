@@ -1,28 +1,6 @@
 use sdl2::ttf::Font;
 use sdl2::ttf::Sdl2TtfContext;
 
-pub enum Command {
-    Play,
-    Quit,
-}
-
-pub enum GameState {
-    MainMenu(MainMenuButton),
-    Playing,
-}
-
-#[derive(PartialEq, Eq)]
-pub enum MainMenuButton {
-    // i hate naming these things
-    Play,
-    Quit,
-}
-
-#[derive(Default)]
-pub struct Game {
-    pub state: GameState,
-}
-
 pub struct FontManager<'ttf> {
     pub monster_bites: Fonts<'ttf>,
 }
@@ -31,18 +9,6 @@ pub struct Fonts<'ttf> {
     normal_path: &'ttf str,
     italic_path: Option<&'ttf str>,
     pub ttf_context: &'ttf Sdl2TtfContext,
-}
-
-impl Default for GameState {
-    fn default() -> Self {
-        Self::MainMenu(MainMenuButton::default())
-    }
-}
-
-impl Default for MainMenuButton {
-    fn default() -> Self {
-        Self::Play
-    }
 }
 
 impl<'ttf> FontManager<'ttf> {

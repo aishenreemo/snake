@@ -15,13 +15,13 @@ fn main() -> Result<(), Box<dyn ::std::error::Error>> {
         .build()
         .expect("Could not initialize video subsystem.");
 
-    let mut game = core::Game::default();
-    let font_mgr = core::FontManager::new(&ttf_context)?;
-
     let mut canvas = window
         .into_canvas()
         .build()
         .expect("Could not make a canvas.");
+
+    let font_mgr = core::font::FontManager::new(&ttf_context)?;
+    let mut game = core::Game::init(canvas.output_size()?);
 
     let mut event_pump = sdl_context.event_pump()?;
 
