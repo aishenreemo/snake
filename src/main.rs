@@ -4,8 +4,9 @@ mod listener;
 
 pub mod core;
 
-fn main() -> Result<(), String> {
+fn main() -> Result<(), Box<dyn ::std::error::Error>> {
     let sdl_context = sdl2::init()?;
+    let ttf_context = sdl2::ttf::init()?;
     let video_subsystem = sdl_context.video()?;
 
     let window = video_subsystem
@@ -15,6 +16,7 @@ fn main() -> Result<(), String> {
         .expect("Could not initialize video subsystem.");
 
     let mut game = core::Game::default();
+    let font_mgr = core::FontManager::new(&ttf_context)?;
 
     let mut canvas = window
         .into_canvas()
@@ -38,7 +40,7 @@ fn main() -> Result<(), String> {
         }
 
         // render
-        if let Err(error_msg) = display::render(&game, &mut canvas) {
+        if let Err(error_msg) = display::render(&game, &mut canvas, &font_mgr) {
             eprintln!("Encountered error while rendering canvas:\n{error_msg:?}");
         }
 
