@@ -16,7 +16,7 @@ fn main() -> Result<(), GameError> {
     let video_subsystem = sdl_context.video()?;
 
     let window = video_subsystem
-        .window("snek geym", 600, 600)
+        .window("snek geym", 600, 700)
         .position_centered()
         .build()
         .expect("Could not initialize video subsystem.");
@@ -68,7 +68,7 @@ struct Game {
     last_update: SystemTime,
 }
 
-#[derive(PartialEq, Eq, Clone, Copy)]
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
 enum Direction {
     Up,
     Down,
@@ -89,7 +89,7 @@ impl Game {
     fn init() -> Self {
         Self {
             score: 0,
-            body: VecDeque::from([(2, 3), (3, 3)]),
+            body: VecDeque::from([(3, 3), (4, 3)]),
             food: (10, 10),
             columns: 20,
             rows: 20,
@@ -114,12 +114,33 @@ impl Game {
 fn render(game: &Game, canvas: &mut WindowCanvas) -> Result<(), GameError> {
     let size = canvas.output_size()?;
 
-    let width = (size.0 as f32 / game.columns as f32) as u32;
-    let height = (size.1 as f32 / game.rows as f32) as u32;
+    let window_width = size.0 as f32;
+    let padding_percentage = 20.0 / 600.0;
+    let padding = (window_width * padding_percentage) as i32;
+    let game_x = padding;
+    let game_y = padding;
+
+    let game_length = (window_width - padding as f32 * 2.0) as u32;
+    let game_width = game_length;
+    let game_height = game_length;
+
+    let cell_width = (game_width as f32 / game.columns as f32) as u32;
+    let cell_height = (game_height as f32 / game.rows as f32) as u32;
 
     // clear background
     canvas.set_draw_color(Color::BLACK);
     canvas.clear();
+
+    // draw game rect
+    canvas.set_draw_color(Color::GRAY);
+    canvas.draw_rect(Rect::new(game_x, game_y, game_width, game_height))?;
+
+    // render food
+    let food_x = (game.food.0 as u32 * cell_width) as i32 + game_x;
+    let food_y = (game.food.1 as u32 * cell_height) as i32 + game_y;
+
+    canvas.set_draw_color(Color::RED);
+    canvas.fill_rect(Rect::new(food_x, food_y, cell_width, cell_height))?;
 
     // calculate the direction of each part of the snek
     let mut directions = vec![];
@@ -127,12 +148,11 @@ fn render(game: &Game, canvas: &mut WindowCanvas) -> Result<(), GameError> {
         let current = chunk[0];
         let next = chunk[1];
 
-        let current = current;
-        let current_x = current.0 as u32 * width;
-        let current_y = current.1 as u32 * height;
+        let current_x = current.0 as u32 * cell_width;
+        let current_y = current.1 as u32 * cell_height;
 
-        let next_x = next.0 as u32 * width;
-        let next_y = next.1 as u32 * width;
+        let next_x = next.0 as u32 * cell_width;
+        let next_y = next.1 as u32 * cell_height;
 
         directions.push(match [(current_x, current_y), (next_x, next_y)] {
             _ if game.direction == Direction::Idle => Direction::Idle,
@@ -148,11 +168,11 @@ fn render(game: &Game, canvas: &mut WindowCanvas) -> Result<(), GameError> {
     canvas.set_draw_color(Color::GREEN);
     for (i, part) in game.body.iter().enumerate() {
         let direction = directions.get(i).unwrap_or(&game.direction);
-        let mut x = (part.0 as u32 * width) as i32;
-        let mut y = (part.1 as u32 * height) as i32;
+        let mut x = (part.0 as u32 * cell_width) as i32 + game_x;
+        let mut y = (part.1 as u32 * cell_height) as i32 + game_y;
 
-        let offset_x = (game.offset * width as f32) as i32;
-        let offset_y = (game.offset * height as f32) as i32;
+        let offset_x = (game.offset * cell_width as f32) as i32;
+        let offset_y = (game.offset * cell_height as f32) as i32;
 
         match direction {
             Direction::Right => x += offset_x,
@@ -162,18 +182,8 @@ fn render(game: &Game, canvas: &mut WindowCanvas) -> Result<(), GameError> {
             Direction::Idle => (),
         }
 
-        let x = x;
-        let y = y;
-
-        canvas.fill_rect(Rect::new(x, y, width, height))?;
+        canvas.fill_rect(Rect::new(x, y, cell_width, cell_height))?;
     }
-
-    // render food
-    let x = game.food.0 as u32 * width;
-    let y = game.food.1 as u32 * height;
-
-    canvas.set_draw_color(Color::RED);
-    canvas.fill_rect(Rect::new(x as i32, y as i32, width, height))?;
 
     canvas.present();
     Ok(())
@@ -221,58 +231,57 @@ fn update(game: &mut Game, commands: Vec<Command>) -> Result<(), GameError> {
         }
     }
 
-    let speed = Duration::from_millis(100);
+    let speed = Duration::from_millis(200);
     let elapsed = game.last_update.elapsed()?;
 
+    let head = game.body.iter().last().unwrap();
+    let head = (head.0 as i16, head.1 as i16);
+
+    let offsets = match game.direction {
+        Up => (0, -1),
+        Down => (0, 1),
+        Left => (-1, 0),
+        Right => (1, 0),
+        Idle => (0, 0),
+    };
+
+    let new_pos = (head.0 + offsets.0, head.1 + offsets.1);
+
+    if !(0..game.columns as i16).contains(&new_pos.0) || !(0..game.rows as i16).contains(&new_pos.1)
+    {
+        game.restart();
+        return Ok(());
+    }
+
     if elapsed >= speed {
-        let head = game.body.iter().last().unwrap();
-        let head = (head.0 as i16, head.1 as i16);
-
-        let prev_dir = game.direction;
-        game.direction = game.directions.pop_front().unwrap_or(game.direction);
-
-        if prev_dir == Left && game.direction == Right
-            || prev_dir == Right && game.direction == Left
-            || prev_dir == Up && game.direction == Down
-            || prev_dir == Down && game.direction == Up
-        {
-            game.direction = prev_dir;
-        }
-
-        let offsets = match game.direction {
-            Up => (0, -1),
-            Down => (0, 1),
-            Left => (-1, 0),
-            Right => (1, 0),
-            Idle => (0, 0),
+        let handle_direction = |v| match (game.direction, v) {
+            (Up, Down) | (Down, Up) | (Right, Left) | (Left, Right) => game.direction,
+            _ => v,
         };
 
-        let new_position = (head.0 + offsets.0, head.1 + offsets.1);
+        game.direction = game
+            .directions
+            .pop_front()
+            .map(handle_direction)
+            .unwrap_or(game.direction);
 
-        if !(0..game.columns as i16).contains(&new_position.0) {
+        if head == new_pos {
+            return Ok(());
+        }
+
+        let new_pos = (new_pos.0 as u8, new_pos.1 as u8);
+        if game.body.range(1..).any(|x| x == &new_pos) {
             game.restart();
             return Ok(());
         }
 
-        if !(0..game.rows as i16).contains(&new_position.1) {
-            game.restart();
-            return Ok(());
-        }
-
-        let new_position = (new_position.0 as u8, new_position.1 as u8);
-
-        if game.body.contains(&new_position) {
-            game.restart();
-            return Ok(());
-        }
-
-        if game.food == new_position {
+        if game.food == new_pos {
             game.score += 1;
             game.food = (5, 5);
-            game.body.push_back(new_position);
+            game.body.push_back(new_pos);
         } else {
             game.body.pop_front();
-            game.body.push_back(new_position);
+            game.body.push_back(new_pos);
         }
 
         game.offset = 0.0;
