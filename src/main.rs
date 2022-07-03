@@ -5,14 +5,16 @@ use std::time::SystemTime;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
+use sdl2::rect::Point;
 use sdl2::rect::Rect;
 use sdl2::render::WindowCanvas;
+use sdl2::ttf::Font;
 
 type GameError = Box<dyn ::std::error::Error>;
 
 fn main() -> Result<(), GameError> {
     let sdl_context = sdl2::init()?;
-    // let ttf_context = sdl2::ttf::init()?;
+    let ttf_context = sdl2::ttf::init()?;
     let video_subsystem = sdl_context.video()?;
 
     let window = video_subsystem
@@ -26,8 +28,9 @@ fn main() -> Result<(), GameError> {
         .build()
         .expect("Could not make a canvas.");
 
-    // let font_mgr = core::font::FontManager::new(&ttf_context)?;
     let mut game = Game::init();
+    let monster_bites =
+        ttf_context.load_font("assets/fonts/Monster Bites/Monster Bites.ttf", 32)?;
 
     // traditional game loop
     let mut event_pump = sdl_context.event_pump()?;
@@ -47,7 +50,7 @@ fn main() -> Result<(), GameError> {
         }
 
         // render
-        if let Err(error_msg) = render(&game, &mut canvas) {
+        if let Err(error_msg) = render(&game, &mut canvas, &monster_bites) {
             eprintln!("Encountered error while rendering canvas:\n{error_msg:?}");
         }
 
@@ -60,6 +63,7 @@ struct Game {
     score: u8,
     body: VecDeque<(u8, u8)>,
     food: (u8, u8),
+    blink: bool,
     columns: u8,
     rows: u8,
     directions: VecDeque<Direction>,
@@ -91,8 +95,9 @@ impl Game {
             score: 0,
             body: VecDeque::from([(3, 3), (4, 3)]),
             food: (10, 10),
-            columns: 20,
-            rows: 20,
+            blink: false,
+            columns: 25,
+            rows: 25,
             directions: VecDeque::new(),
             direction: Direction::Idle,
             offset: 0.0,
@@ -111,25 +116,60 @@ impl Game {
     }
 }
 
-fn render(game: &Game, canvas: &mut WindowCanvas) -> Result<(), GameError> {
+fn render(game: &Game, canvas: &mut WindowCanvas, monster_bites: &Font) -> Result<(), GameError> {
     let size = canvas.output_size()?;
 
     let window_width = size.0 as f32;
-    let padding_percentage = 20.0 / 600.0;
-    let padding = (window_width * padding_percentage) as i32;
-    let game_x = padding;
-    let game_y = padding;
+    let window_height = size.1 as f32;
 
-    let game_length = (window_width - padding as f32 * 2.0) as u32;
+    let padding_percentage = 30.0 / 600.0;
+    let game_x = (window_width * padding_percentage).floor() as i32;
+    let game_y = (window_height * padding_percentage).floor() as i32;
+
+    let game_length = if window_width > window_height {
+        (window_height - game_y as f32 * 2.0) as u32
+    } else {
+        (window_width - game_x as f32 * 2.0) as u32
+    };
+
     let game_width = game_length;
     let game_height = game_length;
 
-    let cell_width = (game_width as f32 / game.columns as f32) as u32;
-    let cell_height = (game_height as f32 / game.rows as f32) as u32;
+    let cell_width = (game_width as f32 / game.columns as f32).floor() as u32;
+    let cell_height = (game_height as f32 / game.rows as f32).floor() as u32;
+
+    let game_width = cell_width * game.columns as u32;
+    let game_height = cell_height * game.rows as u32;
+
+    let game_x = ((window_width - game_width as f32) / 2.0).floor() as i32;
+    let game_y = ((window_height - game_height as f32) / 2.0).floor() as i32;
 
     // clear background
     canvas.set_draw_color(Color::BLACK);
     canvas.clear();
+
+    // render score
+    let texture_creator = canvas.texture_creator();
+
+    let score_color = if game.blink {
+        Color::WHITE
+    } else {
+        Color::GRAY
+    };
+
+    let score_surface = monster_bites
+        .render(&format!("score: {}", game.score))
+        .blended(score_color)?;
+
+    let score_texture = texture_creator.create_texture_from_surface(&score_surface)?;
+
+    let score_center = Point::new((window_width * 0.5) as i32, (window_height * 0.9) as i32);
+    let score_width = (window_width * 0.3) as u32;
+    let score_height = (window_height * 0.05) as u32;
+
+    let score_rect = Rect::from_center(score_center, score_width, score_height);
+
+    canvas.copy(&score_texture, None, score_rect)?;
 
     // draw game rect
     canvas.set_draw_color(Color::GRAY);
@@ -139,7 +179,7 @@ fn render(game: &Game, canvas: &mut WindowCanvas) -> Result<(), GameError> {
     let food_x = (game.food.0 as u32 * cell_width) as i32 + game_x;
     let food_y = (game.food.1 as u32 * cell_height) as i32 + game_y;
 
-    canvas.set_draw_color(Color::RED);
+    canvas.set_draw_color(Color::WHITE);
     canvas.fill_rect(Rect::new(food_x, food_y, cell_width, cell_height))?;
 
     // calculate the direction of each part of the snek
@@ -165,7 +205,8 @@ fn render(game: &Game, canvas: &mut WindowCanvas) -> Result<(), GameError> {
     }
 
     // render snek
-    canvas.set_draw_color(Color::GREEN);
+    canvas.set_draw_color(Color::YELLOW);
+
     for (i, part) in game.body.iter().enumerate() {
         let direction = directions.get(i).unwrap_or(&game.direction);
         let mut x = (part.0 as u32 * cell_width) as i32 + game_x;
@@ -279,9 +320,11 @@ fn update(game: &mut Game, commands: Vec<Command>) -> Result<(), GameError> {
             game.score += 1;
             game.food = (5, 5);
             game.body.push_back(new_pos);
+            game.blink = true;
         } else {
             game.body.pop_front();
             game.body.push_back(new_pos);
+            game.blink = false;
         }
 
         game.offset = 0.0;
