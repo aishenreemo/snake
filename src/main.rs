@@ -97,8 +97,8 @@ impl Game {
     fn init() -> Self {
         Self {
             rng: rand::thread_rng(),
-            columns: 25,
-            rows: 25,
+            columns: 20,
+            rows: 20,
             body: [(3, 3), (4, 3)].into(),
             food: (10, 10),
             score: 0,
@@ -113,7 +113,7 @@ impl Game {
     fn restart(&mut self) {
         self.score = 0;
         self.body = [(2, 3), (3, 3)].into();
-        self.food = (10, 10);
+        self.food = (self.columns / 2, self.rows / 2);
         self.direction = Direction::Idle;
         self.offset = 0.0;
         self.last_update = SystemTime::now();
@@ -127,60 +127,33 @@ impl Game {
         );
 
         if self.body.contains(&food) {
-            food = find_unoccupied_cell(vec![food], &self.body, self.columns, self.rows)
-                .unwrap_or(food);
+            food = find_unoccupied_cell(&self.body, self.columns, self.rows).unwrap_or(food);
         }
 
         self.food = food;
     }
 }
 
-fn find_unoccupied_cell(
-    occupied_cells: Vec<(u8, u8)>,
-    body: &VecDeque<(u8, u8)>,
-    columns: u8,
-    rows: u8,
-) -> Option<(u8, u8)> {
-    if body.len() >= 25 * 25 {
+fn find_unoccupied_cell(body: &VecDeque<(u8, u8)>, columns: u8, rows: u8) -> Option<(u8, u8)> {
+    if body.len() >= columns as usize * rows as usize {
         return None;
     }
 
-    let offsets = [
-        (-1, -1),
-        (0, -1),
-        (1, -1),
-        (-1, 0),
-        (0, 0),
-        (1, 0),
-        (-1, 1),
-        (0, 1),
-        (1, 1),
-    ];
+    let offsets = [(0, -1), (-1, 0), (1, 0), (0, 1)];
 
-    let mut new_occupied_cells = vec![];
+    body.iter().find_map(|pos| {
+        let pos = (pos.0 as i32, pos.1 as i32);
+        offsets.iter().find_map(|offset| {
+            let pos = (pos.0 + offset.0, pos.1 + offset.1);
 
-    for cell in occupied_cells.iter() {
-        let cell = (cell.0 as i32, cell.1 as i32);
+            if !(0..columns as i32).contains(&pos.0) || !(0..rows as i32).contains(&pos.1) {
+                return None;
+            }
 
-        let positions = offsets
-            .iter()
-            .map(|pos| (cell.0 + pos.0, cell.1 + pos.1))
-            .filter(|pos| (0..columns as i32).contains(&pos.0) && (0..rows as i32).contains(&pos.1))
-            .map(|pos| (pos.0 as u8, pos.1 as u8))
-            .filter(|pos| occupied_cells.contains(pos));
-
-        new_occupied_cells.extend(positions)
-    }
-
-    // remove duplicate
-    new_occupied_cells.sort_by(|a, b| ((a.0 + 1) * (a.1 + 1)).cmp(&((b.0 + 1) * (b.1 + 1))));
-    new_occupied_cells.dedup();
-
-    new_occupied_cells
-        .iter()
-        .find(|pos| !body.contains(pos))
-        .copied()
-        .or_else(|| find_unoccupied_cell(new_occupied_cells, body, columns, rows))
+            let pos = (pos.0 as u8, pos.1 as u8);
+            (!body.contains(&pos)).then(|| pos)
+        })
+    })
 }
 
 fn render(game: &Game, canvas: &mut WindowCanvas, monster_bites: &Font) -> Result<(), GameError> {
