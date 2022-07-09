@@ -10,6 +10,9 @@ use sdl2::rect::Rect;
 use sdl2::render::WindowCanvas;
 use sdl2::ttf::Font;
 
+use rand::rngs::ThreadRng;
+use rand::Rng;
+
 type GameError = Box<dyn ::std::error::Error>;
 
 fn main() -> Result<(), GameError> {
@@ -60,15 +63,16 @@ fn main() -> Result<(), GameError> {
 }
 
 struct Game {
-    score: u8,
-    body: VecDeque<(u8, u8)>,
-    food: (u8, u8),
-    blink: bool,
+    rng: ThreadRng,
     columns: u8,
     rows: u8,
-    directions: VecDeque<Direction>,
-    direction: Direction,
+    body: VecDeque<(u8, u8)>,
+    food: (u8, u8),
+    score: u8,
+    blink: bool,
     offset: f32,
+    direction: Direction,
+    directions: VecDeque<Direction>,
     last_update: SystemTime,
 }
 
@@ -92,28 +96,91 @@ enum Command {
 impl Game {
     fn init() -> Self {
         Self {
-            score: 0,
-            body: VecDeque::from([(3, 3), (4, 3)]),
-            food: (10, 10),
-            blink: false,
+            rng: rand::thread_rng(),
             columns: 25,
             rows: 25,
-            directions: VecDeque::new(),
-            direction: Direction::Idle,
+            body: [(3, 3), (4, 3)].into(),
+            food: (10, 10),
+            score: 0,
+            blink: false,
             offset: 0.0,
+            direction: Direction::Idle,
+            directions: VecDeque::new(),
             last_update: SystemTime::now(),
         }
     }
 
     fn restart(&mut self) {
         self.score = 0;
-        self.body = VecDeque::from([(2, 3), (3, 3)]);
+        self.body = [(2, 3), (3, 3)].into();
         self.food = (10, 10);
         self.direction = Direction::Idle;
         self.offset = 0.0;
         self.last_update = SystemTime::now();
         self.directions.clear();
     }
+
+    fn relocate_food(&mut self) {
+        let mut food = (
+            self.rng.gen_range(0..self.columns as u8),
+            self.rng.gen_range(0..self.rows as u8),
+        );
+
+        if self.body.contains(&food) {
+            food = find_unoccupied_cell(vec![food], &self.body, self.columns, self.rows)
+                .unwrap_or(food);
+        }
+
+        self.food = food;
+    }
+}
+
+fn find_unoccupied_cell(
+    occupied_cells: Vec<(u8, u8)>,
+    body: &VecDeque<(u8, u8)>,
+    columns: u8,
+    rows: u8,
+) -> Option<(u8, u8)> {
+    if body.len() >= 25 * 25 {
+        return None;
+    }
+
+    let offsets = [
+        (-1, -1),
+        (0, -1),
+        (1, -1),
+        (-1, 0),
+        (0, 0),
+        (1, 0),
+        (-1, 1),
+        (0, 1),
+        (1, 1),
+    ];
+
+    let mut new_occupied_cells = vec![];
+
+    for cell in occupied_cells.iter() {
+        let cell = (cell.0 as i32, cell.1 as i32);
+
+        let positions = offsets
+            .iter()
+            .map(|pos| (cell.0 + pos.0, cell.1 + pos.1))
+            .filter(|pos| (0..columns as i32).contains(&pos.0) && (0..rows as i32).contains(&pos.1))
+            .map(|pos| (pos.0 as u8, pos.1 as u8))
+            .filter(|pos| occupied_cells.contains(pos));
+
+        new_occupied_cells.extend(positions)
+    }
+
+    // remove duplicate
+    new_occupied_cells.sort_by(|a, b| ((a.0 + 1) * (a.1 + 1)).cmp(&((b.0 + 1) * (b.1 + 1))));
+    new_occupied_cells.dedup();
+
+    new_occupied_cells
+        .iter()
+        .find(|pos| !body.contains(pos))
+        .copied()
+        .or_else(|| find_unoccupied_cell(new_occupied_cells, body, columns, rows))
 }
 
 fn render(game: &Game, canvas: &mut WindowCanvas, monster_bites: &Font) -> Result<(), GameError> {
@@ -142,7 +209,7 @@ fn render(game: &Game, canvas: &mut WindowCanvas, monster_bites: &Font) -> Resul
     let game_height = cell_height * game.rows as u32;
 
     let game_x = ((window_width - game_width as f32) / 2.0).floor() as i32;
-    let game_y = ((window_height - game_height as f32) / 2.0).floor() as i32;
+    let game_y = ((window_height - game_height as f32) * 0.3).floor() as i32;
 
     // clear background
     canvas.set_draw_color(Color::BLACK);
@@ -272,7 +339,7 @@ fn update(game: &mut Game, commands: Vec<Command>) -> Result<(), GameError> {
         }
     }
 
-    let speed = Duration::from_millis(200);
+    let speed = Duration::from_millis(150);
     let elapsed = game.last_update.elapsed()?;
 
     let head = game.body.iter().last().unwrap();
@@ -318,7 +385,7 @@ fn update(game: &mut Game, commands: Vec<Command>) -> Result<(), GameError> {
 
         if game.food == new_pos {
             game.score += 1;
-            game.food = (5, 5);
+            game.relocate_food();
             game.body.push_back(new_pos);
             game.blink = true;
         } else {
